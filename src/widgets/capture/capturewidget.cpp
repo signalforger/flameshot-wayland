@@ -26,6 +26,7 @@
 #include "src/widgets/orientablepushbutton.h"
 #include "src/widgets/panel/sidepanelwidget.h"
 #include "src/widgets/panel/utilitypanel.h"
+#include "src/utils/desktopinfo.h"
 #include <QApplication>
 #include <QCheckBox>
 #include <QDateTime>
@@ -112,6 +113,7 @@ CaptureWidget::CaptureWidget(const CaptureRequest& req,
         if (!ok) {
             AbstractLogger::error() << tr("Unable to capture screen");
             this->close();
+            return;
         }
         m_context.origScreenshot = m_context.screenshot;
 
@@ -150,8 +152,16 @@ CaptureWidget::CaptureWidget(const CaptureRequest& req,
 #else
 // Call cmake with -DFLAMESHOT_DEBUG_CAPTURE=ON to enable easier debugging
 #if !defined(FLAMESHOT_DEBUG_CAPTURE)
-        setWindowFlags(Qt::BypassWindowManagerHint | Qt::WindowStaysOnTopHint |
-                       Qt::FramelessWindowHint | Qt::Tool);
+        // On Wayland, BypassWindowManagerHint doesn't work and causes
+        // QPainter errors. Use different flags for Wayland compositors.
+        DesktopInfo desktopInfo;
+        if (desktopInfo.waylandDetected()) {
+            setWindowFlags(Qt::WindowStaysOnTopHint |
+                           Qt::FramelessWindowHint | Qt::Tool);
+        } else {
+            setWindowFlags(Qt::BypassWindowManagerHint | Qt::WindowStaysOnTopHint |
+                           Qt::FramelessWindowHint | Qt::Tool);
+        }
         // Fix for Qt6 dual monitor offset: position widget to cover entire
         // desktop
         QRect desktopGeom = ScreenGrabber().desktopGeometry();
@@ -212,7 +222,7 @@ CaptureWidget::CaptureWidget(const CaptureRequest& req,
     initSelection(); // button handler must be initialized before
     initShortcuts(); // must be called after initSelection
     // init magnify
-    if (m_config.showMagnifier()) {
+    if (m_config.showMagnifier() && !m_context.screenshot.isNull()) {
         m_magnifier = new MagnifierWidget(
           m_context.screenshot, m_uiColor, m_config.squareMagnifier(), this);
     }
@@ -644,6 +654,10 @@ void CaptureWidget::paintEvent(QPaintEvent* paintEvent)
 {
     Q_UNUSED(paintEvent)
     QPainter painter(this);
+    // On Wayland, the paint device may not be ready yet
+    if (!painter.isActive()) {
+        return;
+    }
     GeneralConf::xywh_position position =
       static_cast<GeneralConf::xywh_position>(m_config.showSelectionGeometry());
     /* QPainter::save and restore is somewhat costly so we try to guess
@@ -1843,8 +1857,11 @@ void CaptureWidget::drawToolsData(bool drawSelection)
 void CaptureWidget::drawObjectSelection()
 {
     auto toolItem = activeToolObject();
-    if (toolItem && !toolItem->editMode()) {
+    if (toolItem && !toolItem->editMode() && !m_context.screenshot.isNull()) {
         QPainter painter(&m_context.screenshot);
+        if (!painter.isActive()) {
+            return;
+        }
         toolItem->drawObjectSelection(painter);
         // TODO move this elsewhere
         if (m_context.toolSize != toolItem->size()) {
@@ -1858,7 +1875,13 @@ void CaptureWidget::drawObjectSelection()
 
 void CaptureWidget::processPixmapWithTool(QPixmap* pixmap, CaptureTool* tool)
 {
+    if (!pixmap || pixmap->isNull()) {
+        return;
+    }
     QPainter painter(pixmap);
+    if (!painter.isActive()) {
+        return;
+    }
     painter.setRenderHint(QPainter::Antialiasing);
     tool->process(painter, *pixmap);
 }

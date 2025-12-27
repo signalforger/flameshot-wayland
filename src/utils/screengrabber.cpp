@@ -18,6 +18,7 @@
 #include <QDBusInterface>
 #include <QDBusReply>
 #include <QDir>
+#include <QTimer>
 #include <QUrl>
 #include <QUuid>
 #endif
@@ -137,6 +138,8 @@ void ScreenGrabber::freeDesktopPortal(bool& ok, QPixmap& res)
       QMap<QString, QVariant>({ { "handle_token", QVariant(token) },
                                 { "interactive", QVariant(false) } }));
 
+    // Add timeout to prevent hanging forever
+    QTimer::singleShot(10000, &loop, &QEventLoop::quit);
     loop.exec();
     QObject::disconnect(conn);
     request->Close().waitForFinished();
@@ -170,6 +173,7 @@ QPixmap ScreenGrabber::grabEntireDesktop(bool& ok)
         switch (m_info.windowManager()) {
             case DesktopInfo::GNOME:
             case DesktopInfo::KDE:
+            case DesktopInfo::COSMIC:
                 freeDesktopPortal(ok, res);
                 break;
             case DesktopInfo::QTILE:

@@ -66,9 +66,18 @@ int CaptureToolObjects::find(const QPoint& pos, QSize captureSize)
     if (m_captureToolObjects.empty()) {
         return -1;
     }
+    if (!captureSize.isValid() || captureSize.isEmpty()) {
+        return -1;
+    }
     QPixmap pixmap(captureSize);
+    if (pixmap.isNull()) {
+        return -1;
+    }
     pixmap.fill(Qt::transparent);
     QPainter painter(&pixmap);
+    if (!painter.isActive()) {
+        return -1;
+    }
     // first attempt to find at exact position
     int radius = SEARCH_RADIUS_NEAR;
     int index = findWithRadius(painter, pixmap, pos, radius);
